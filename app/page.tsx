@@ -57,16 +57,34 @@ export default function Home() {
 
       const data = await response.json();
       
-      // Add each response message with a slight delay to show the thinking process
+      // Add each response message with a delay to show the thinking process
       for (const response of data.responses) {
-        await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay between messages
+        // Show loading state
+        setIsLoading(true);
+        
+        // Random delay between 1-3 seconds to simulate thinking
+        await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
+        
+        // Add the message
         setMessages(prev => [...prev, response]);
+        
+        // Brief pause before next message
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
 
       // Add steps with a delay
       for (const step of data.steps) {
-        await new Promise(resolve => setTimeout(resolve, 1000)); // 1s delay between steps
+        // Show loading state
+        setIsLoading(true);
+        
+        // Random delay between 1.5-3.5 seconds to simulate processing
+        await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1500));
+        
+        // Add the step
         setSteps(prev => [...prev, step]);
+        
+        // Brief pause before next step
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
     } catch (error) {
       console.error('Error:', error);
