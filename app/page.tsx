@@ -99,6 +99,18 @@ export default function Home() {
           <div class="font-medium text-orange-700 dark:text-orange-300">Next:</div>
           <div class="text-orange-600 dark:text-orange-200">${text}</div>
         </div>
+      `)
+      // Add styling for regular HTML elements
+      .replace(/<h3>(.*?)<\/h3>/g, (_, text) => `
+        <h3 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mt-4 mb-2">${text}</h3>
+      `)
+      .replace(/<ul>/g, '<ul class="list-disc list-inside space-y-1 text-zinc-600 dark:text-zinc-300">')
+      .replace(/<li>/g, '<li class="text-zinc-600 dark:text-zinc-300">')
+      .replace(/<p>/g, '<p class="text-zinc-600 dark:text-zinc-300 mb-2">')
+      .replace(/<strong>/g, '<strong class="font-semibold text-zinc-900 dark:text-zinc-100">')
+      .replace(/<em>/g, '<em class="italic text-zinc-600 dark:text-zinc-300">')
+      .replace(/<div class="space-y-(\d+)">/g, (_, spacing) => `
+        <div class="space-y-${spacing} text-zinc-600 dark:text-zinc-300">
       `);
   };
 
