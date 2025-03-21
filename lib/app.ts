@@ -61,7 +61,9 @@ Remember to:
 2. Format your responses with appropriate HTML tags
 3. Use the special component tags for tool results
 4. Keep your responses clear and concise
-5. Provide helpful suggestions and next steps`;
+5. Provide helpful suggestions and next steps
+6. Be sarcastic
+`;
 
 // Function to process messages and get agent response
 export async function processMessage(messages: ChatMessage[]): Promise<{ messages: ChatMessage[], steps: AgentStep[] }> {
@@ -77,28 +79,28 @@ export async function processMessage(messages: ChatMessage[]): Promise<{ message
     // Get the response
     const response = await agent.invoke(inputs);
     const allMessages = response.messages;
-    
+
     // Convert all messages to ChatMessage format
     const chatMessages: ChatMessage[] = [];
     const steps: AgentStep[] = [];
-    
+
     // Skip the system message and convert the rest
     for (let i = 1; i < allMessages.length; i++) {
       const message = allMessages[i];
       if (message instanceof AIMessage) {
         const content = message.content.toString();
-        
+
         // Parse steps from the message
         const thoughtMatch = content.match(/Thought: (.*?)(?=Action:|$)/s);
         const actionMatch = content.match(/Action: (.*?)(?=Result:|$)/s);
         const resultMatch = content.match(/Result: (.*?)(?=Next:|$)/s);
         const nextMatch = content.match(/Next: (.*?)(?=Thought:|$)/s);
-        
+
         if (thoughtMatch && actionMatch && resultMatch) {
           // Parse the action to get tool and input
           const actionText = actionMatch[1].trim();
           const toolMatch = actionText.match(/(\w+)\s*\((.*)\)/);
-          
+
           steps.push({
             thought: thoughtMatch[1].trim(),
             action: {
@@ -109,7 +111,7 @@ export async function processMessage(messages: ChatMessage[]): Promise<{ message
             nextStep: nextMatch ? nextMatch[1].trim() : undefined
           });
         }
-        
+
         chatMessages.push(convertToChatMessage(message));
       }
     }
@@ -149,75 +151,5 @@ export async function chatWithHenry(message: string, previousMessages: ChatMessa
   } catch (error) {
     console.error("Error in chatWithHenry:", error);
     throw new Error(error instanceof Error ? error.message : "Failed to chat with Henry");
-  }
-}
-
-export async function POST(req: Request) {
-  try {
-    const { message, messages } = await req.json();
-
-    // Convert messages to LangChain format
-    const langChainMessages = messages.map(convertToLangChainMessage);
-
-    // Add system message and user message
-    const response = await agent.invoke({
-      messages: [
-        systemMessage,
-        ...langChainMessages,
-        new HumanMessage(message),
-      ],
-    });
-
-    // Convert response to ChatMessage format
-    const chatMessages = response.messages.map(convertToChatMessage);
-
-    // Parse the last message to extract steps
-    const lastMessage = response.messages[response.messages.length - 1];
-    const content = typeof lastMessage.content === 'string' ? lastMessage.content : '';
-    
-    // Extract steps using regex
-    const thoughtRegex = /<thought>(.*?)<\/thought>/gs;
-    const actionRegex = /<action>(.*?)<\/action>/gs;
-    const resultRegex = /<result>(.*?)<\/result>/gs;
-    const nextRegex = /<next>(.*?)<\/next>/gs;
-
-    const thoughts = [...content.matchAll(thoughtRegex)].map(match => match[1]);
-    const actions = [...content.matchAll(actionRegex)].map(match => match[1]);
-    const results = [...content.matchAll(resultRegex)].map(match => match[1]);
-    const nextSteps = [...content.matchAll(nextRegex)].map(match => match[1]);
-
-    // Create steps array
-    const steps = thoughts.map((thought, index) => ({
-      thought,
-      action: {
-        tool: actions[index]?.split(' ')[1] || '',
-        input: actions[index]?.split('with input: ')[1] || '',
-      },
-      result: results[index] || '',
-      nextStep: nextSteps[index],
-    }));
-
-    // Clean up the last message by removing the HTML tags
-    const cleanContent = content
-      .replace(/<thought>.*?<\/thought>/gs, '')
-      .replace(/<action>.*?<\/action>/gs, '')
-      .replace(/<result>.*?<\/result>/gs, '')
-      .replace(/<next>.*?<\/next>/gs, '')
-      .trim();
-
-    // Update the last message with clean content
-    chatMessages[chatMessages.length - 1].content = cleanContent;
-
-    return NextResponse.json({
-      responses: chatMessages,
-      updatedMessages: [...messages, ...chatMessages],
-      steps,
-    });
-  } catch (error) {
-    console.error('Error:', error);
-    return NextResponse.json(
-      { error: 'Failed to process message' },
-      { status: 500 }
-    );
   }
 }
