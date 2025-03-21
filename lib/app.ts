@@ -4,17 +4,7 @@ import {ChatAnthropic} from "@langchain/anthropic";
 import {createReactAgent} from "@langchain/langgraph/prebuilt";
 import {tools} from "./tools";
 import {AIMessage, HumanMessage, SystemMessage, BaseMessage, MessageContent} from "@langchain/core/messages";
-
-// Define types for our messages
-interface ChatMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
-}
-
-interface ChatResponse {
-  responses: ChatMessage[];
-  updatedMessages: ChatMessage[];
-}
+import { ChatMessage, ChatResponse } from "./types";
 
 // Create an instance of an LLM
 const model = new ChatAnthropic({

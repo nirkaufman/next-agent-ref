@@ -2,9 +2,10 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Message } from "./components/Message";
+import { ChatMessage } from "@/lib/types";
 
 export default function Home() {
-  const [messages, setMessages] = useState<Array<{ role: "assistant" | "user"; content: string }>>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -63,7 +64,7 @@ export default function Home() {
     <div className="flex flex-col h-screen bg-white dark:bg-zinc-900">
       <div className="flex-1 overflow-y-auto p-4">
         <div className="max-w-3xl mx-auto space-y-4">
-          {messages.map((message, index) => (
+          {messages.filter(msg => msg.role !== "system").map((message, index) => (
             <Message
               key={index}
               role={message.role}
