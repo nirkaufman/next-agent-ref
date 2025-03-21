@@ -1,11 +1,12 @@
 'use server';
 
-import {ChatAnthropic} from "@langchain/anthropic";
-import {createReactAgent} from "@langchain/langgraph/prebuilt";
-import {tools} from "./tools";
-import {SystemMessage, AIMessage} from "@langchain/core/messages";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
+import { tools } from "./tools";
+import { SystemMessage, AIMessage, HumanMessage } from "@langchain/core/messages";
 import { ChatMessage, ChatResponse, AgentStep } from "./types";
 import { convertToLangChainMessage, convertToChatMessage } from "./utils";
+import { NextResponse } from "next/server";
 
 // Create an instance of an LLM
 const model = new ChatAnthropic({
@@ -14,25 +15,30 @@ const model = new ChatAnthropic({
 });
 
 // Create the agent
-const agent = createReactAgent({llm: model, tools});
+const agent = createReactAgent({ llm: model, tools });
 
 // Initialize system message
-const systemMessage = new SystemMessage(`
-   You are Henry. A travel agent. You can assist by planning and putting together a trip to a destination of your choice.
-   You can check the weather at the provided location, book flights and hotels, and even book a taxi
-   Ride to the airport.
-   You can also recommend attractions to visit at the destination.
-   Answer shortly, be professional and focused.
-   When you done, output a summary of the trip, with all the details.
-   
-   For each step you take, format your response as follows:
-   Thought: Explain what you're thinking about doing
-   Action: Specify which tool you're using and what input you're providing
-   Result: Show what you learned from using the tool
-   Next: Explain what you'll do next based on the result
-   
-   Make your responses conversational and natural, as if you're explaining your process to the user.
-`);
+const systemMessage = new SystemMessage(
+  `You are Henry, a travel planning assistant. Your goal is to help users plan their trips by providing detailed, personalized travel recommendations.
+
+When responding, format your messages in a clear, step-by-step way using HTML tags:
+
+1. For your thoughts, wrap them in <thought> tags:
+<thought>I need to check the weather for Paris in June...</thought>
+
+2. For actions you're taking, wrap them in <action> tags:
+<action>Using weather-forecast with input: Paris, June</action>
+
+3. For results from tools, wrap them in <result> tags:
+<result>The weather in Paris during June is pleasant with average temperatures of 20°C...</result>
+
+4. For your next planned step, wrap it in <next> tags:
+<next>Based on the good weather, I'll look for available flights...</next>
+
+5. For regular responses, just use normal text.
+
+Always explain your reasoning and actions clearly. If you need to use a tool, explain why you're using it and what you expect to learn from it.`
+);
 
 // Function to process messages and get agent response
 export async function processMessage(messages: ChatMessage[]): Promise<{ messages: ChatMessage[], steps: AgentStep[] }> {
@@ -120,5 +126,75 @@ export async function chatWithHenry(message: string, previousMessages: ChatMessa
   } catch (error) {
     console.error("Error in chatWithHenry:", error);
     throw new Error(error instanceof Error ? error.message : "Failed to chat with Henry");
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const { message, messages } = await req.json();
+
+    // Convert messages to LangChain format
+    const langChainMessages = messages.map(convertToLangChainMessage);
+
+    // Add system message and user message
+    const response = await agent.invoke({
+      messages: [
+        systemMessage,
+        ...langChainMessages,
+        new HumanMessage(message),
+      ],
+    });
+
+    // Convert response to ChatMessage format
+    const chatMessages = response.messages.map(convertToChatMessage);
+
+    // Parse the last message to extract steps
+    const lastMessage = response.messages[response.messages.length - 1];
+    const content = typeof lastMessage.content === 'string' ? lastMessage.content : '';
+    
+    // Extract steps using regex
+    const thoughtRegex = /<thought>(.*?)<\/thought>/gs;
+    const actionRegex = /<action>(.*?)<\/action>/gs;
+    const resultRegex = /<result>(.*?)<\/result>/gs;
+    const nextRegex = /<next>(.*?)<\/next>/gs;
+
+    const thoughts = [...content.matchAll(thoughtRegex)].map(match => match[1]);
+    const actions = [...content.matchAll(actionRegex)].map(match => match[1]);
+    const results = [...content.matchAll(resultRegex)].map(match => match[1]);
+    const nextSteps = [...content.matchAll(nextRegex)].map(match => match[1]);
+
+    // Create steps array
+    const steps = thoughts.map((thought, index) => ({
+      thought,
+      action: {
+        tool: actions[index]?.split(' ')[1] || '',
+        input: actions[index]?.split('with input: ')[1] || '',
+      },
+      result: results[index] || '',
+      nextStep: nextSteps[index],
+    }));
+
+    // Clean up the last message by removing the HTML tags
+    const cleanContent = content
+      .replace(/<thought>.*?<\/thought>/gs, '')
+      .replace(/<action>.*?<\/action>/gs, '')
+      .replace(/<result>.*?<\/result>/gs, '')
+      .replace(/<next>.*?<\/next>/gs, '')
+      .trim();
+
+    // Update the last message with clean content
+    chatMessages[chatMessages.length - 1].content = cleanContent;
+
+    return NextResponse.json({
+      responses: chatMessages,
+      updatedMessages: [...messages, ...chatMessages],
+      steps,
+    });
+  } catch (error) {
+    console.error('Error:', error);
+    return NextResponse.json(
+      { error: 'Failed to process message' },
+      { status: 500 }
+    );
   }
 }
