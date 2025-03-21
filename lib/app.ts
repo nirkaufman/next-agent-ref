@@ -3,8 +3,9 @@
 import {ChatAnthropic} from "@langchain/anthropic";
 import {createReactAgent} from "@langchain/langgraph/prebuilt";
 import {tools} from "./tools";
-import {AIMessage, HumanMessage, SystemMessage, BaseMessage, MessageContent} from "@langchain/core/messages";
-import { ChatMessage, ChatResponse } from "./types";
+import {SystemMessage, AIMessage} from "@langchain/core/messages";
+import { ChatMessage, ChatResponse, AgentStep } from "./types";
+import { convertToLangChainMessage, convertToChatMessage } from "./utils";
 
 // Create an instance of an LLM
 const model = new ChatAnthropic({
@@ -23,52 +24,18 @@ const systemMessage = new SystemMessage(`
    You can also recommend attractions to visit at the destination.
    Answer shortly, be professional and focused.
    When you done, output a summary of the trip, with all the details.
+   
+   For each step you take, format your response as follows:
+   Thought: Explain what you're thinking about doing
+   Action: Specify which tool you're using and what input you're providing
+   Result: Show what you learned from using the tool
+   Next: Explain what you'll do next based on the result
+   
+   Make your responses conversational and natural, as if you're explaining your process to the user.
 `);
 
-// Convert message content to string
-function contentToString(content: MessageContent): string {
-  if (typeof content === 'string') {
-    return content;
-  }
-  if (Array.isArray(content)) {
-    return content.map(item => {
-      if (typeof item === 'string') return item;
-      if (item.type === 'text') return item.text;
-      return '';
-    }).join('');
-  }
-  return '';
-}
-
-// Convert ChatMessage to LangChain message
-function convertToLangChainMessage(message: ChatMessage): BaseMessage {
-  switch (message.role) {
-    case "system":
-      return new SystemMessage(message.content);
-    case "user":
-      return new HumanMessage(message.content);
-    case "assistant":
-      return new AIMessage(message.content);
-    default:
-      throw new Error(`Invalid message role: ${message.role}`);
-  }
-}
-
-// Convert LangChain message to ChatMessage
-function convertToChatMessage(message: BaseMessage): ChatMessage {
-  if (message instanceof SystemMessage) {
-    return { role: "system", content: contentToString(message.content) };
-  } else if (message instanceof HumanMessage) {
-    return { role: "user", content: contentToString(message.content) };
-  } else if (message instanceof AIMessage) {
-    return { role: "assistant", content: contentToString(message.content) };
-  } else {
-    throw new Error(`Unsupported message type: ${message.constructor.name}`);
-  }
-}
-
 // Function to process messages and get agent response
-export async function processMessage(messages: ChatMessage[]): Promise<ChatMessage[]> {
+export async function processMessage(messages: ChatMessage[]): Promise<{ messages: ChatMessage[], steps: AgentStep[] }> {
   try {
     // Convert messages to LangChain format
     const langChainMessages = [systemMessage, ...messages.map(convertToLangChainMessage)];
@@ -80,13 +47,45 @@ export async function processMessage(messages: ChatMessage[]): Promise<ChatMessa
 
     // Get the response
     const response = await agent.invoke(inputs);
-    const latestMessage = response.messages[response.messages.length - 1];
+    const allMessages = response.messages;
     
-    if (latestMessage instanceof AIMessage) {
-      return [convertToChatMessage(latestMessage)];
+    // Convert all messages to ChatMessage format
+    const chatMessages: ChatMessage[] = [];
+    const steps: AgentStep[] = [];
+    
+    // Skip the system message and convert the rest
+    for (let i = 1; i < allMessages.length; i++) {
+      const message = allMessages[i];
+      if (message instanceof AIMessage) {
+        const content = message.content.toString();
+        
+        // Parse steps from the message
+        const thoughtMatch = content.match(/Thought: (.*?)(?=Action:|$)/s);
+        const actionMatch = content.match(/Action: (.*?)(?=Result:|$)/s);
+        const resultMatch = content.match(/Result: (.*?)(?=Next:|$)/s);
+        const nextMatch = content.match(/Next: (.*?)(?=Thought:|$)/s);
+        
+        if (thoughtMatch && actionMatch && resultMatch) {
+          // Parse the action to get tool and input
+          const actionText = actionMatch[1].trim();
+          const toolMatch = actionText.match(/(\w+)\s*\((.*)\)/);
+          
+          steps.push({
+            thought: thoughtMatch[1].trim(),
+            action: {
+              tool: toolMatch ? toolMatch[1] : actionText,
+              input: toolMatch ? toolMatch[2] : ''
+            },
+            result: resultMatch[1].trim(),
+            nextStep: nextMatch ? nextMatch[1].trim() : undefined
+          });
+        }
+        
+        chatMessages.push(convertToChatMessage(message));
+      }
     }
 
-    return [];
+    return { messages: chatMessages, steps };
   } catch (error) {
     console.error("Error processing message:", error);
     throw new Error("Failed to process message");
@@ -110,12 +109,13 @@ export async function chatWithHenry(message: string, previousMessages: ChatMessa
     ];
 
     // Process the message and get response
-    const responses = await processMessage(updatedMessages);
+    const { messages: responses, steps } = await processMessage(updatedMessages);
 
     // Return both the responses and the updated message history
     return {
       responses,
-      updatedMessages: [...updatedMessages, ...responses]
+      updatedMessages: [...updatedMessages, ...responses],
+      steps
     };
   } catch (error) {
     console.error("Error in chatWithHenry:", error);
