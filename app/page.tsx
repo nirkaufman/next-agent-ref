@@ -1,15 +1,8 @@
 'use client';
 
-import { useState, useRef, useEffect } from "react";
-import { Message } from "./components/Message";
-import { ChatMessage, AgentStep } from "@/lib/types";
-import { WeatherResult } from './components/WeatherResult';
-import { FlightResult } from './components/FlightResult';
-import { AttractionResult } from './components/AttractionResult';
-import { TaxiResult } from './components/TaxiResult';
-import { HotelResult } from './components/HotelResult';
-import ReactDOMServer from 'react-dom/server';
 import { renderMessageContent } from "@/lib/render";
+import { AgentStep, ChatMessage } from "@/lib/types";
+import { useEffect, useRef, useState } from "react";
 
 export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -35,6 +28,7 @@ export default function Home() {
     setIsLoading(true);
     setMessages(prev => [...prev, { role: "user", content: message.trim() }]);
     setSteps([]); // Clear previous steps
+    
     e.currentTarget.reset();
 
     try {
@@ -59,17 +53,13 @@ export default function Home() {
       const data = await response.json();
       
       // Add each response message with a delay to show the thinking process
-      for (const response of data.responses) {
-        // Show loading state
+      for (const response of data.responses) {  
         setIsLoading(true);
-        
-        // Random delay between 1-3 seconds to simulate thinking
+              // Random delay between 1-3 seconds to simulate thinking
         await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
-        
-        // Add the message
+            
         setMessages(prev => [...prev, response]);
-        
-        // Brief pause before next message
+      
         await new Promise(resolve => setTimeout(resolve, 500));
       }
 
